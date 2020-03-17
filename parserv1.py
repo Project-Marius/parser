@@ -127,6 +127,13 @@ def parseACFBonus(pgs):
 def isEmptyPg(pg):
     return len(pg.text.strip()) == 0
 
+#Adds a run to pg with text text and bold/italic/underline the same as oldRun
+def addFormattedRun(pg, text, oldRun):
+    newRun = pg.add_run(text)
+    newRun.bold = oldRun.bold
+    newRun.italic = oldRun.italic
+    newRun.underline = oldRun.underline
+
 #Split any paragraphs that contain newlines
 def splitParagraphs(pgs):
     newPgs = []
@@ -138,20 +145,20 @@ def splitParagraphs(pgs):
             for run in pg.runs:
                 if "\n" in run.text:
                     tokens = run.text.split("\n")
-                    newPg.add_run(text=tokens[0], style=run.style)
+                    addFormattedRun(newPg, tokens[0], run)
                     if len(tokens) > 2:
                         for token in tokens[1:-1]:
                             newPg = dummyDoc.add_paragraph()
                             newPgs.append(newPg)
-                            newPg.add_run(text=token, style=run.style)
+                            addFormattedRun(newPg, token, run)
                     newPg = dummyDoc.add_paragraph()
                     newPgs.append(newPg)
-                    newPg.add_run(text=tokens[-1], style=run.style)
+                    addFormattedRun(newPg, tokens[-1], run)
                 else:
-                    newPg.add_run(text=run.text, style=run.style)
+                    addFormattedRun(newPg, run.text, run)
         else:
             newPgs.append(pg)
-    return [p for p in newPgs if not isEmptyPg(p)]
+    return newPgs #Includes empty paragraphs
         
 def parseACFFile(name):
     doc = docx.Document(name)
@@ -163,18 +170,21 @@ def parseACFFile(name):
     tossups = []
     bonuses = []
     curPgs = []
-    for pg in doc.paragraphs:
-        if pg.text.strip().lower() == "tossups":
+    splitParas = splitParagraphs(doc.paragraphs)
+    for pg in splitParas:
+        if "tossups" in pg.text.strip().lower():
             state = State.TOSSUPS
-        elif pg.text.strip().lower() == "bonuses":
+        elif "bonuses" in pg.text.strip().lower():
             state = State.BONUSES
         elif state != State.HEADER:
             if isEmptyPg(pg):
                 if len(curPgs) > 0:
-                    if state == State.TOSSUPS:
-                        tossups.append(parseACFTossup(splitParagraphs(curPgs)))
+                    if state == State.TOSSUPS and len(curPgs) in [2,3]:
+                        tossups.append(parseACFTossup(curPgs))
+                    elif len(curPgs) in [7,8]:
+                        bonuses.append(parseACFBonus(curPgs))
                     else:
-                        bonuses.append(parseACFBonus(splitParagraphs(curPgs)))
+                        print("Excluding paragraphs: "[i.text for i in curPgs])
                     curPgs = []
             else:
                 curPgs.append(pg)
