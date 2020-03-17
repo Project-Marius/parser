@@ -26,7 +26,7 @@ def parseACFTossup(pgs):
         power = te[0].strip()
     rest = te[-1].strip() #Works with or without power
     te = getACFPronounciations(cleanText) 
-    clean = te["clean"]
+    clean = te["clean"].strip()
     guides = te["guides"]
     answer = parseACFAnswerLine(pgs[1])
     tags = []
@@ -71,15 +71,15 @@ def parseACFAnswerLine(pg):
             runText = "<" + fs + ">" + runText + "<\\" + fs + ">"
         allTexts.append(runText)
     tokens = "".join(allTexts).split("[")
-    main = tokens[0]
-    comments = "[".join(tokens[1:])
+    main = tokens[0].strip()
+    comments = "[".join(tokens[1:]).strip()
     if len(comments) > 0 and comments[-1] == "]":
         comments = comments[:-1]
     answerRegex = re.compile(r"answer:\s", re.IGNORECASE)
     return {"main" : answerRegex.sub("", main), "comments" : comments}
 
 def parseACFTags(pg):
-    text = pg.text
+    text = pg.text.strip()
     if text[0] == "<" and text[-1] == ">":
         text = text[1:-1]
         return [s.strip() for s in text.split(",")]
@@ -95,7 +95,7 @@ def parseACFBonusSection(pgs):
         if run.italic:
             runText = "<i>" + runText + "<\\i>"
         texts.append(runText)
-    text = " ".join(texts)
+    text = " ".join(texts).strip()
     if text[0:4] == "[10]":
         text = text[4:].strip()
     answer = parseACFAnswerLine(pgs[1])
@@ -110,7 +110,7 @@ def parseACFBonus(pgs):
         if run.italic:
             runText = "<i>" + runText + "<\\i>"
         introTexts.append(runText)
-    introText = " ".join(introTexts)
+    introText = " ".join(introTexts).strip()
     number = int(introText.split(".")[0].strip())
     intro = ".".join(introText.split(".")[1:])
     sections = [parseACFBonusSection(pgs[i:i+2]) for i in range(1, 7, 2)]
@@ -126,6 +126,32 @@ def parseACFBonus(pgs):
 
 def isEmptyPg(pg):
     return len(pg.text.strip()) == 0
+
+#Split any paragraphs that contain newlines
+def splitParagraphs(pgs):
+    newPgs = []
+    for pg in pgs:
+        if "\n" in pg.text:
+            dummyDoc = docx.Document() #A fake document to hold new paragraphs
+            newPg = dummyDoc.add_paragraph()
+            newPgs.append(newPg)
+            for run in pg.runs:
+                if "\n" in run.text:
+                    tokens = run.text.split("\n")
+                    newPg.add_run(text=tokens[0], style=run.style)
+                    if len(tokens) > 2:
+                        for token in tokens[1:-1]:
+                            newPg = dummyDoc.add_paragraph()
+                            newPgs.append(newPg)
+                            newPg.add_run(text=token, style=run.style)
+                    newPg = dummyDoc.add_paragraph()
+                    newPgs.append(newPg)
+                    newPg.add_run(text=tokens[-1], style=run.style)
+                else:
+                    newPg.add_run(text=run.text, style=run.style)
+        else:
+            newPgs.append(pg)
+    return [p for p in newPgs if not isEmptyPg(p)]
         
 def parseACFFile(name):
     doc = docx.Document(name)
@@ -146,11 +172,11 @@ def parseACFFile(name):
             if isEmptyPg(pg):
                 if len(curPgs) > 0:
                     if state == State.TOSSUPS:
-                        tossups.append(parseACFTossup(curPgs))
+                        tossups.append(parseACFTossup(splitParagraphs(curPgs)))
                     else:
-                        bonuses.append(parseACFBonus(curPgs))
+                        bonuses.append(parseACFBonus(splitParagraphs(curPgs)))
                     curPgs = []
             else:
                 curPgs.append(pg)
     jsonString = json.dumps({"tossups" : tossups, "bonuses" : bonuses})
-    return jsonString.encode('latin1').decode('unicode_escape').replace("\\\\", "\\") #Hopefully handle wierd characters
+    return jsonString.encode('latin1').decode('unicode_escape') #Hopefully handle wierd characters
